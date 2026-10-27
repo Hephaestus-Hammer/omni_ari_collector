@@ -68,13 +68,23 @@ def main():
 
     df = pd.DataFrame(rows)
 
-    # A short run label: method module plus only the parameters that differ
-    # between runs, so adding n_comp: [30, 50] shows up as "n_comp=50".
+    # Modules don't all share parameters (e.g. a random baseline has a seed but
+    # no n_comp), which leaves gaps; pandas then stores whole numbers as floats.
+    # Turn those columns back into integers so 50 isn't shown as 50.0.
+    for c in df.columns:
+        s = df[c]
+        if pd.api.types.is_float_dtype(s) and s.notna().any() and (s.dropna() % 1 == 0).all():
+            df[c] = s.astype("Int64")
+
+    # A short run label: method name (or module id) plus only the parameters
+    # that differ between runs that actually have them, so adding
+    # n_comp: [30, 50] shows up as "n_comp=50".
     method_params = [c for c in df.columns if c.startswith("methods.") and c != "methods.method_name"]
-    varying = [c for c in method_params if df[c].astype(str).nunique() > 1]
+    varying = [c for c in method_params if df[c].dropna().astype(str).nunique() > 1]
 
     def label(r):
-        base = str(r.get("methods.method_name") or r.get("methods_module"))
+        name = r.get("methods.method_name")
+        base = str(name) if pd.notna(name) else str(r.get("methods_module"))
         extra = ", ".join(f"{c.split('.', 1)[1]}={r[c]}" for c in varying if pd.notna(r[c]))
         ds = r.get("datasets.dataset_name")
         multi_ds = "datasets.dataset_name" in df and df["datasets.dataset_name"].nunique() > 1
@@ -113,7 +123,7 @@ def plot(df: pd.DataFrame, path: Path):
         bars = ax.barh(pos, df[col], height=h - 0.04, color=colors[name], label=name)
         for b, v in zip(bars, df[col]):
             ax.text(b.get_width() + 0.01, b.get_y() + b.get_height() / 2,
-                    f"{v:.3f}", va="center", fontsize=9, color=ink)
+                    f"{v:.3f}".replace("-0.000", "0.000"), va="center", fontsize=9, color=ink)
 
     ax.set_yticks(list(y), df["run"], color=ink)
     ax.set_xlim(min(0, df[["ari_leiden", "ari_louvain"]].min().min() - 0.05), 1.08)
